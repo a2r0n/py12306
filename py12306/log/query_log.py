@@ -26,7 +26,7 @@ class QueryLog(BaseLog):
     LOG_INIT_JOBS = ''
 
     MESSAGE_GIVE_UP_CHANCE_CAUSE_TICKET_NUM_LESS_THAN_SPECIFIED = '余票数小于乘车人数，放弃此次提交机会'
-    MESSAGE_QUERY_LOG_OF_EVERY_TRAIN = '{}-{}'
+    MESSAGE_QUERY_LOG_OF_EVERY_TRAIN = '{}'
     MESSAGE_QUERY_LOG_OF_TRAIN_INFO = '{} {}'
     MESSAGE_QUERY_START_BY_DATE = '出发日期 {}: {} - {}'
 
@@ -63,7 +63,6 @@ class QueryLog(BaseLog):
                     result = {}
                     # self.add_quick_log('加载status.json失败, 文件内容为: {}.'.format(repr(result)))
                     # self.flush()  # 这里可以用不用提示
-
 
         if Config.is_cluster_enabled():
             result = self.get_data_from_cluster()
@@ -102,7 +101,11 @@ class QueryLog(BaseLog):
             self.add_log('乘车日期：{}'.format(job.left_dates))
             self.add_log('坐席：{}'.format('，'.join(job.allow_seats)))
             self.add_log('乘车人：{}'.format('，'.join(job.members)))
-            self.add_log('筛选车次：{}'.format('，'.join(job.allow_train_numbers if job.allow_train_numbers else ['不筛选'])))
+            if job.except_train_numbers:
+                train_number_message = '排除 ' + '，'.join(job.allow_train_numbers)
+            else:
+                train_number_message = '，'.join(job.allow_train_numbers if job.allow_train_numbers else ['不筛选'])
+            self.add_log('筛选车次：{}'.format(train_number_message))
             self.add_log('任务名称：{}'.format(job.job_name))
             # 乘车日期：['2019-01-24', '2019-01-25', '2019-01-26', '2019-01-27']
             self.add_log('')
@@ -157,9 +160,9 @@ class QueryLog(BaseLog):
     @classmethod
     def print_job_start(cls, job_name):
         self = cls()
-        message = '=== 正在进行第 {query_count} 次查询 {job_name} === {time}'.format(
+        message = '>> 第 {query_count} 次查询 {job_name} {time}'.format(
             query_count=int(self.data.get('query_count', 0)) + 1,
-            job_name=job_name, time=datetime.datetime.now())
+            job_name=job_name, time=time_now().strftime("%Y-%m-%d %H:%M:%S"))
         self.add_log(message)
         self.refresh_data()
         if is_main_thread():
@@ -167,9 +170,13 @@ class QueryLog(BaseLog):
         return self
 
     @classmethod
+    def add_query_time_log(cls, start, end, is_cdn):
+        return cls().add_log(('*' if is_cdn else '') + '耗时 %.2f' % (end - start))
+
+    @classmethod
     def add_stay_log(cls, second):
         self = cls()
-        self.add_log('安全停留 {}'.format(second))
+        self.add_log('停留 {}'.format(second))
         return self
 
     def print_data_restored(self):

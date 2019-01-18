@@ -32,8 +32,10 @@ class Job:
     account_key = 0
     allow_seats = []
     current_seat = None
+    current_seat_name = ''
     current_order_seat = None
     allow_train_numbers = []
+    except_train_numbers = []
     members = []
     member_num = 0
     member_num_take = 0  # 最终提交的人数
@@ -46,6 +48,8 @@ class Job:
     query = None
     cluster = None
     ticket_info = {}
+    is_cdn = False
+    query_time_out = 3
     INDEX_TICKET_NUM = 11
     INDEX_TRAIN_NUMBER = 3
     INDEX_TRAIN_NO = 2
@@ -73,7 +77,8 @@ class Job:
         self.account_key = str(info.get('account_key'))
         self.allow_seats = info.get('seats')
         self.allow_train_numbers = info.get('train_numbers')
-        self.members = info.get('members')
+        self.except_train_numbers = info.get('except_train_numbers')
+        self.members = list(map(str, info.get('members')))
         self.member_num = len(self.members)
         self.member_num_take = self.member_num
         self.allow_less_member = bool(info.get('allow_less_member'))
@@ -98,8 +103,11 @@ class Job:
                 self.refresh_station(station)
                 for date in self.left_dates:
                     self.left_date = date
+                    tmp_start_time = time.time()
                     response = self.query_by_date(date)
+                    tmp_end_time = time.time()  # 耗时
                     self.handle_response(response)
+                    QueryLog.add_query_time_log(tmp_start_time, tmp_end_time, is_cdn=self.is_cdn)
                     if not self.is_alive: return
                     self.safe_stay()
                     if is_main_thread():
@@ -116,13 +124,17 @@ class Job:
         通过日期进行查询
         :return:
         """
+        from py12306.helpers.cdn import Cdn
         QueryLog.add_log(('\n' if not is_main_thread() else '') + QueryLog.MESSAGE_QUERY_START_BY_DATE.format(date,
                                                                                                               self.left_station,
                                                                                                               self.arrive_station))
         url = LEFT_TICKETS.get('url').format(left_date=date, left_station=self.left_station_code,
                                              arrive_station=self.arrive_station_code, type='leftTicket/queryZ')
-
-        return self.query.session.get(url)
+        if Config.is_cdn_enabled() and Cdn().is_ready:
+            self.is_cdn = True
+            return self.query.session.cdn_request(url, timeout=self.query_time_out)
+        self.is_cdn = False
+        return self.query.session.get(url, timeout=self.query_time_out)
 
     def handle_response(self, response):
         """
@@ -139,10 +151,9 @@ class Job:
             return False
         for result in results:
             self.ticket_info = ticket_info = result.split('|')
-            if not self.is_trains_number_valid(ticket_info):  # 车次是否有效
+            if not self.is_trains_number_valid():  # 车次是否有效
                 continue
-            QueryLog.add_log(QueryLog.MESSAGE_QUERY_LOG_OF_EVERY_TRAIN.format(self.get_info_of_train_number(),
-                                                                              self.get_info_of_ticket_num()))
+            QueryLog.add_log(QueryLog.MESSAGE_QUERY_LOG_OF_EVERY_TRAIN.format(self.get_info_of_train_number()))
             if not self.is_has_ticket(ticket_info):
                 continue
             allow_seats = self.allow_seats if self.allow_seats else list(
@@ -223,9 +234,11 @@ class Job:
     def is_has_ticket_by_seat(self, seat):
         return seat != '' and seat != '无' and seat != '*'
 
-    def is_trains_number_valid(self, ticket_info):
+    def is_trains_number_valid(self):
+        if self.except_train_numbers:
+            return self.get_info_of_train_number().upper() not in map(str.upper, self.except_train_numbers)
         if self.allow_train_numbers:
-            return self.get_info_of_train_number() in self.allow_train_numbers
+            return self.get_info_of_train_number().upper() in map(str.upper, self.allow_train_numbers)
         return True
 
     def is_member_number_valid(self, seat):
@@ -254,6 +267,7 @@ class Job:
         self.passengers = passengers
 
     def set_seat(self, seat):
+        self.current_seat_name = seat
         self.current_seat = SeatType.dicts.get(seat)
         self.current_order_seat = OrderSeatType.dicts.get(seat)
 
