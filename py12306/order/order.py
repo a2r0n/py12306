@@ -141,17 +141,9 @@ class Order:
             OrderLog.add_quick_log(OrderLog.MESSAGE_SUBMIT_ORDER_REQUEST_SUCCESS).flush()
             return True
         else:
-<<<<<<< HEAD
-            if str(result.get('messages', '').find('未处理') >= 0):  # 未处理订单
-                # 提示有未处理订单时其实已经成功了，增加容错
-                self.send_notification(OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_CONTENT)
-                stay_second(self.retry_time)
-                return True
-=======
             if (str(result.get('messages', '')).find('未处理') >= 0):  # 未处理订单
                 self.order_id = 0  # 需要拿到订单号 TODO
                 return -1
->>>>>>> upstream/master
             OrderLog.add_quick_log(
                 OrderLog.MESSAGE_SUBMIT_ORDER_REQUEST_FAIL.format(
                     result.get('messages', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR))).flush()
