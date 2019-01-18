@@ -1,3 +1,4 @@
+# -*- encoding:utf-8 -*-
 import urllib
 
 # from py12306.config import UserType
@@ -76,24 +77,28 @@ class Order:
                               OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_CONTENT)
         self.send_notification()
 
-    def send_notification(self):
+    def send_notification(self, custom_content=None):
         num = 0  # 通知次数
         sustain_time = self.notification_sustain_time
+
+        if custom_content:
+            content = custom_content
+        else:
+            content = OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_OF_EMAIL_CONTENT.format(self.order_id)
+
         if Config().EMAIL_ENABLED:  # 邮件通知
             Notification.send_email(Config().EMAIL_RECEIVER, OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_TITLE,
-                                    OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_OF_EMAIL_CONTENT.format(self.order_id))
+                                    content)
         if Config().DINGTALK_ENABLED:  # 钉钉通知
-            Notification.dingtalk_webhook(
-                OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_OF_EMAIL_CONTENT.format(self.order_id))
+            Notification.dingtalk_webhook(content)
         if Config().TELEGRAM_ENABLED:  # Telegram推送
-            Notification.send_to_telegram(
-                OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_OF_EMAIL_CONTENT.format(self.order_id))
+            Notification.send_to_telegram(content)
         if Config().SERVERCHAN_ENABLED:  # ServerChan通知
             Notification.server_chan(Config().SERVERCHAN_KEY, OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_TITLE,
-                                     OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_OF_EMAIL_CONTENT.format(self.order_id))
+                                     content)
         if Config().PUSHBEAR_ENABLED:  # PushBear通知
             Notification.push_bear(Config().PUSHBEAR_KEY, OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_TITLE,
-                                   OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_OF_EMAIL_CONTENT.format(self.order_id))
+                                   content)
         while sustain_time:  # TODO 后面直接查询有没有待支付的订单就可以
             num += 1
             if Config().NOTIFICATION_BY_VOICE_CODE:  # 语音通知
@@ -124,7 +129,9 @@ class Order:
             OrderLog.add_quick_log(OrderLog.MESSAGE_SUBMIT_ORDER_REQUEST_SUCCESS).flush()
             return True
         else:
-            if (str(result.get('messages', '')).find('未处理') >= 0):  # 未处理订单
+            if str(result.get('messages', '').find('未处理') >= 0):  # 未处理订单
+                # 提示有未处理订单时其实已经成功了，增加容错
+                self.send_notification(OrderLog.MESSAGE_ORDER_SUCCESS_NOTIFICATION_CONTENT)
                 stay_second(self.retry_time)
             OrderLog.add_quick_log(
                 OrderLog.MESSAGE_SUBMIT_ORDER_REQUEST_FAIL.format(result.get('messages', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR))).flush()
